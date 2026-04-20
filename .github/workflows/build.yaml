@@ -1,0 +1,90 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - "dev"
+      - "prod"
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+          
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. Setup Dynamic Names (Repo Name, Owner, Suffix)
+      - name: Setup Dynamic Environment
+        id: setup_env
+        run: |
+          # 1. Get Repo Name and Owner dynamically
+          REPO_NAME="${{ github.event.repository.name }}"
+          OWNER="${{ github.repository_owner }}"
+          
+          # Convert to lowercase to ensure Docker compatibility
+          REPO_NAME=$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]')
+          OWNER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          
+          # 2. Extract Version from Commit Message (e.g., [v1.0.4-3])
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if [[ $COMMIT_MSG =~ \[([^]]+)\] ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "VERSION=$VERSION" >> $GITHUB_ENV
+          else
+            echo "Error: No version tag found in commit message (e.g., [v1.0.4-3])."
+            exit 1
+          fi
+
+          # 3. Determine Suffix based on branch
+          if [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
+            SUFFIX="" # Or "-prod" if you prefer
+            # Note: Usually prod images don't have a suffix, but if you want one:
+            SUFFIX="-prod"
+          else
+            SUFFIX="-dev"
+          fi
+
+          # 4. Construct the Full Image Name
+          # Logic: ghcr.io / owner / repo-name / repo-name-suffix
+          # Example: ghcr.io/linkcxo-v2/ai-content-aggregation-service/ai-content-aggregation-service-dev
+          
+          IMAGE_NAME="$OWNER/$REPO_NAME/$REPO_NAME$SUFFIX"
+          
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "Final Image Target: ${{ env.REGISTRY }}/$IMAGE_NAME:$VERSION"
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          # Pass the dynamic version as build-arg
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+          # Use the dynamic IMAGE_NAME variable created in step 1
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
