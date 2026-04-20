@@ -6,7 +6,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 app = FastAPI(title="DeepSeek-R1 Inference API")
 
 # MODEL_NAME = "deepseek-ai/DeepSeek-R1"
-MODEL_NAME = "Qwen/Qwen2.5-VL-72B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-VL-7B-Instruct"
 
 print(f"Loading {MODEL_NAME}... This requires significant VRAM.")
 
